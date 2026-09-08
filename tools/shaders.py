@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import shutil
@@ -16,6 +17,32 @@ ROOT = Path(__file__).resolve().parents[1]
 NAGA_VERSION = "30.0.0"
 TOOLS = ROOT / "build/tools"
 NAGA = TOOLS / "naga/bin" / ("naga.exe" if os.name == "nt" else "naga")
+NAGA_LOCK = TOOLS / "naga.lock"
+
+
+@contextmanager
+def _naga_install_lock():
+    """Serialize the check-and-install transaction across shader processes."""
+    TOOLS.mkdir(parents=True, exist_ok=True)
+    with NAGA_LOCK.open("a+") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            handle.write("\\0")
+            handle.flush()
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def required_program(name: str) -> str:
@@ -26,30 +53,31 @@ def required_program(name: str) -> str:
 
 
 def provision() -> Path:
-    if not NAGA.is_file():
-        cargo = required_program("cargo")
-        temporary = ROOT / "scratch/shaders"
-        temporary.mkdir(parents=True, exist_ok=True)
-        environment = dict(
-            os.environ,
-            CARGO_HOME=str(TOOLS / "cargo"),
-            CARGO_TARGET_DIR=str(TOOLS / "naga-build"),
-            TMPDIR=str(temporary),
-        )
-        subprocess.run(
-            [
-                cargo,
-                "install",
-                "naga-cli",
-                "--version",
-                NAGA_VERSION,
-                "--locked",
-                "--root",
-                str(TOOLS / "naga"),
-            ],
-            env=environment,
-            check=True,
-        )
+    with _naga_install_lock():
+        if not NAGA.is_file():
+            cargo = required_program("cargo")
+            temporary = ROOT / "scratch/shaders"
+            temporary.mkdir(parents=True, exist_ok=True)
+            environment = dict(
+                os.environ,
+                CARGO_HOME=str(TOOLS / "cargo"),
+                CARGO_TARGET_DIR=str(TOOLS / "naga-build"),
+                TMPDIR=str(temporary),
+            )
+            subprocess.run(
+                [
+                    cargo,
+                    "install",
+                    "naga-cli",
+                    "--version",
+                    NAGA_VERSION,
+                    "--locked",
+                    "--root",
+                    str(TOOLS / "naga"),
+                ],
+                env=environment,
+                check=True,
+            )
     version = subprocess.run(
         [str(NAGA), "--version"], capture_output=True, text=True, check=True
     ).stdout.strip()
