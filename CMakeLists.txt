@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.24)
+project(web_port_dependencies NONE)
+if(NOT EMSCRIPTEN)
+    message(FATAL_ERROR "web-port requires the Emscripten toolchain; use tools/web_port.py")
+endif()
+include(cmake/Dependencies.cmake)
