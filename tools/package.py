@@ -10,10 +10,10 @@ from pathlib import Path
 import shutil
 
 
-def package_application(destination: Path, files: dict[str, Path], lucent: Path) -> None:
+def package_application(destination: Path, files: dict[str, Path]) -> None:
     """Package only the caller's exact asset map, never a build-tree glob."""
     inputs = dict(files)
-    runtime = lucent / "platforms/web"
+    runtime = Path(__file__).resolve().parents[1] / "platforms/web"
     for name in ("storage.mjs", "isolation.mjs"):
         if name in inputs:
             raise ValueError(f"Reserved shared runtime resource: {name}")
@@ -26,9 +26,9 @@ def package_application(destination: Path, files: dict[str, Path], lucent: Path)
         if not source.is_file():
             raise FileNotFoundError(f"Browser release input is missing: {source}")
     template = (runtime / "service-worker.js").read_text()
-    marker = "__LUCENT_WEB_RELEASE__"
+    marker = "__WEB_PORT_RELEASE__"
     if template.count(marker) != 1:
-        raise ValueError("Lucent service worker must have exactly one release marker")
+        raise ValueError("web-port service worker must have exactly one release marker")
     destination.mkdir(parents=True, exist_ok=True)
     allowed = set(inputs) | {"service-worker.js", ".nojekyll"}
     unexpected = {item.name for item in destination.iterdir()} - allowed
@@ -50,7 +50,6 @@ def package_application(destination: Path, files: dict[str, Path], lucent: Path)
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--destination", type=Path, required=True)
-    parser.add_argument("--lucent", type=Path, required=True)
     parser.add_argument("--file", action="append", default=[], metavar="NAME=PATH")
     args = parser.parse_args()
     files = {}
@@ -59,7 +58,7 @@ def main() -> None:
         if not separator or name in files:
             parser.error(f"Expected one unique NAME=PATH: {item}")
         files[name] = Path(path)
-    package_application(args.destination, files, args.lucent)
+    package_application(args.destination, files)
 
 
 if __name__ == "__main__":

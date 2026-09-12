@@ -2,12 +2,13 @@
 
 Shared deterministic Emscripten dependencies for native game ports. This owns
 the pthread-enabled SDL WebGPU, SDL_image, SDL_ttf, FreeType, zlib and FFmpeg
-prefix. Titles consume its CMake package exports and validated manifest;
-browser runtime behavior belongs to Lucent, and game validation belongs to titles.
+prefix. Titles consume its CMake package exports and validated manifest. Browser
+OPFS storage and isolation belong here; game validation belongs to titles.
 
-The standalone normal verifier is `uv run --frozen python tools/verify.py`.
-It checks Python lint, source structure, dependency/packaging refusals and actual
-shader conversion. The builder and `run.sh` never run tests.
+The standalone normal verifier is `EMSDK=/path/to/emsdk uv run --frozen python
+tools/verify.py`. It checks Python lint and tests, C++ formatting and Clang
+diagnostics against the Emscripten compile database, dependency/packaging
+refusals, and actual shader conversion. The builder and `run.sh` never run tests.
 
 Build with Emscripten 4.0.16 selected through `EMSDK`:
 
@@ -22,8 +23,8 @@ SDL fork; published builds use its pinned revision. No game files are build inpu
 This repository builds dependencies, not a game. See `docs/project-state.md`
 for the measured state and `docs/codemap.md` for ownership.
 
-`tools/package.py` receives one explicit map of redistributable release resources
-and a pinned Lucent checkout. It adds Lucent's storage/isolation modules and renders
+`tools/package.py` receives one explicit map of redistributable release resources.
+It adds this framework's storage/isolation modules and renders
 the service worker's exact content-addressed offline allowlist. It refuses unknown
 files already in the destination. Titles own their page, app identity, icons and
 native runtime artifact names; player files are never packaging inputs.

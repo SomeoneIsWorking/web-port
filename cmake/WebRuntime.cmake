@@ -1,0 +1,10 @@
+if(NOT EMSCRIPTEN)
+    message(FATAL_ERROR "web_port::runtime requires Emscripten with pthreads and WasmFS")
+endif()
+
+add_library(web_port_runtime STATIC "${CMAKE_CURRENT_LIST_DIR}/../src/web_storage.cpp")
+add_library(web_port::runtime ALIAS web_port_runtime)
+target_include_directories(web_port_runtime PUBLIC "${CMAKE_CURRENT_LIST_DIR}/../include")
+target_compile_features(web_port_runtime PUBLIC cxx_std_20)
+target_compile_options(web_port_runtime PUBLIC -pthread)
+target_link_options(web_port_runtime PUBLIC -pthread -sWASMFS=1)
