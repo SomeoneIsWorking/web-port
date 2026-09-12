@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from verify_cpp import verify as verify_cpp
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -20,6 +22,7 @@ def main() -> None:
     for command in ([sys.executable, "-m", "ruff", "check", "tools", "tests"],
                     [sys.executable, "-m", "pytest", "-q", "tests"]):
         subprocess.run(command, cwd=ROOT, env=environment, check=True)
+    verify_cpp(environment)
 
 
 if __name__ == "__main__":
