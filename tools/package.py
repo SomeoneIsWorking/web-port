@@ -36,13 +36,17 @@ def package_application(destination: Path, files: dict[str, Path]) -> None:
         raise ValueError(f"Release directory contains unowned files: {sorted(unexpected)}")
     digest = hashlib.sha256()
     digest.update(template.encode())
+    hashes = {}
     for name, source in sorted(inputs.items()):
         digest.update(name.encode() + b"\0")
+        file_digest = hashlib.sha256()
         with source.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                file_digest.update(chunk)
                 digest.update(chunk)
+        hashes[name] = file_digest.hexdigest()
         shutil.copyfile(source, destination / name)
-    release = {"version": digest.hexdigest(), "files": sorted(inputs)}
+    release = {"version": digest.hexdigest(), "files": sorted(inputs), "hashes": hashes}
     (destination / "service-worker.js").write_text(template.replace(marker, json.dumps(release)))
     (destination / ".nojekyll").write_text("")
 

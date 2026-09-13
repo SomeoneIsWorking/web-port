@@ -5,8 +5,40 @@ const cachePrefix = `web-port-app:${self.registration.scope}:`;
 const cacheName = cachePrefix + RELEASE.version;
 const assets = new Set(RELEASE.files.map(path => new URL(path, self.registration.scope).href));
 
+function releaseName(url) {
+  return new URL(url).pathname.split("/").pop();
+}
+
+function hex(bytes) {
+  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/* Populate the release cache from the network and refuse any body whose digest
+ * is not the one this release was addressed with. cache.addAll() would accept a
+ * response out of the browser's HTTP cache, so a browser that had loaded the
+ * previous deployment could store those bytes under this release's version name
+ * and serve them for as long as that version stayed current. */
+async function fetchVerified(url) {
+  const response = await fetch(url, {cache: "reload"});
+  if (!response.ok) {
+    throw new Error(`Application resource unavailable: ${url}`);
+  }
+  const expected = RELEASE.hashes[releaseName(url)];
+  if (!expected) {
+    throw new Error(`Application resource is absent from the release hashes: ${url}`);
+  }
+  const observed = hex(await crypto.subtle.digest("SHA-256", await response.clone().arrayBuffer()));
+  if (observed !== expected) {
+    throw new Error(`Application resource does not match its release hash: ${url}`);
+  }
+  return response;
+}
+
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll([...assets])));
+  event.waitUntil((async () => {
+    const cache = await caches.open(cacheName);
+    await Promise.all([...assets].map(async url => cache.put(url, await fetchVerified(url))));
+  })());
 });
 
 self.addEventListener("activate", event => {
