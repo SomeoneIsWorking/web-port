@@ -36,8 +36,13 @@ async function fetchVerified(url) {
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
+    // Verify every body before writing any of them, so an install that must be
+    // refused does not leave a partially populated release behind.
+    const verified = await Promise.all(
+      [...assets].map(async url => [url, await fetchVerified(url)])
+    );
     const cache = await caches.open(cacheName);
-    await Promise.all([...assets].map(async url => cache.put(url, await fetchVerified(url))));
+    await Promise.all(verified.map(([url, response]) => cache.put(url, response)));
   })());
 });
 
