@@ -43,6 +43,10 @@ self.addEventListener("install", event => {
     );
     const cache = await caches.open(cacheName);
     await Promise.all(verified.map(([url, response]) => cache.put(url, response)));
+    // Otherwise the new worker waits for every client of the old one to close,
+    // and a player who keeps the page open never receives the new release.
+    // Activation claims the open clients, so the next load serves it.
+    await self.skipWaiting();
   })());
 });
 

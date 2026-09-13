@@ -18,6 +18,7 @@ const scope = "https://example.test/xmen2/";
 function context(network) {
   const stored = new Map();
   const listeners = {};
+  const activated = [];
   const caches = {
     open: async () => ({
       put: async (key, response) => stored.set(String(key), response),
@@ -32,6 +33,7 @@ function context(network) {
       registration: { scope },
       clients: { claim: async () => {} },
       location: { origin: "https://example.test" },
+      skipWaiting: async () => activated.push(true),
     },
     caches,
     fetch: async (url) => {
@@ -50,7 +52,7 @@ function context(network) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
-  return { listeners, stored };
+  return { listeners, stored, activated };
 }
 
 async function install(listeners) {
@@ -66,14 +68,16 @@ const check = (label, ok, detail) => {
   if (!ok) failures += 1;
 };
 
-// 1. The released bytes install and are cached.
+// 1. The released bytes install, are cached, and take over immediately.
 {
-  const { listeners, stored } = context((name) => released(name));
+  const { listeners, stored, activated } = context((name) => released(name));
   try {
     await install(listeners);
     check("released bytes install", true);
     check("every asset cached", stored.size === release.files.length,
       `${stored.size}/${release.files.length}`);
+    check("a served release takes over without waiting", activated.length === 1,
+      `${activated.length} skipWaiting call(s)`);
   } catch (error) {
     check("released bytes install", false, error.message);
   }
@@ -82,7 +86,7 @@ const check = (label, ok, detail) => {
 // 2. The previous deployment's bytes are refused, so the cache is never poisoned.
 {
   const staleTarget = release.files[0];
-  const { listeners, stored } = context((name) =>
+  const { listeners, stored, activated } = context((name) =>
     name === staleTarget ? Buffer.from("the previous deployment") : released(name));
   try {
     await install(listeners);
@@ -90,6 +94,8 @@ const check = (label, ok, detail) => {
   } catch (error) {
     check("stale bytes refused", /release hash/.test(error.message), error.message);
     check("nothing cached from a refused install", stored.size === 0, `${stored.size} entries`);
+    check("a refused release never takes over", activated.length === 0,
+      `${activated.length} skipWaiting call(s)`);
   }
 }
 
