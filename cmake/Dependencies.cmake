@@ -37,7 +37,7 @@ if(WEB_PORT_SDL_SOURCE)
 else()
     set(_sdl_source SOURCE_DIR "${CMAKE_BINARY_DIR}/sources/sdl"
         GIT_REPOSITORY https://github.com/SomeoneIsWorking/SDL.git
-        GIT_TAG 524fa1c886d3d39aa822975f82c2ef6f9cd48c9f GIT_SUBMODULES "")
+        GIT_TAG 1c4aeabe01be35407afa9800afe9fa8a1c85900f GIT_SUBMODULES "")
 endif()
 ExternalProject_Add(sdl
     PREFIX "${CMAKE_BINARY_DIR}/sdl" ${_sdl_source}

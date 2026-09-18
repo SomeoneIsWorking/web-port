@@ -96,6 +96,11 @@ def pinned_revisions() -> dict[str, str]:
 
 _CACHED_OVERRIDE = re.compile(r"^WEB_PORT_SDL_SOURCE:[^=]*=(?P<path>.+)$", re.MULTILINE)
 
+# The one dependency whose source directory this tool can point somewhere else.
+# Named once so the override knob, the announcement, and the stale-build-tree
+# check cannot come to disagree about which dependency that is.
+OVERRIDABLE = "sdl"
+
 
 def source_overrides(build: Path) -> dict[str, Path]:
     """Dependencies being built from a local tree instead of their pin.
@@ -113,7 +118,7 @@ def source_overrides(build: Path) -> dict[str, Path]:
     if not cache.is_file():
         return {}
     match = _CACHED_OVERRIDE.search(cache.read_text())
-    return {"sdl": Path(match.group("path").strip())} if match else {}
+    return {OVERRIDABLE: Path(match.group("path").strip())} if match else {}
 
 
 def _checkout(build: Path, name: str) -> Path | None:
@@ -174,9 +179,20 @@ def _drop_stale_subbuild(build: Path, name: str, source: Path) -> None:
 
     CMake refuses outright rather than reconfiguring -- `The source
     ".../sources/sdl/CMakeLists.txt" does not match the source
-    ".../scratch/sdl-fork/CMakeLists.txt" used to generate cache` -- so
-    removing a source override or moving a pin leaves a tree that cannot
-    build at all until this is cleared.
+    ".../scratch/sdl-fork/CMakeLists.txt" used to generate cache` -- so adding
+    or removing a source override leaves a tree that cannot build at all until
+    this is cleared.
+
+    Only OVERRIDABLE goes through here, because it is the only dependency whose
+    `-S` this tool can move. Applying it to the others compares the wrong two
+    paths: bzip2 is configured from web-port's own `cmake/bzip2` with its git
+    checkout passed in as a variable, so its recorded home never equals its
+    checkout and it was being discarded on every single run.
+
+    The directory is recreated empty, not just removed: ExternalProject's
+    configure step begins by `cd`-ing into it, and a step generated before this
+    ran will not create it -- `/bin/sh: cd: .../bzip2-build: No such file or
+    directory`.
     """
     sub = build / name / "src" / f"{name}-build"
     cache = sub / "CMakeCache.txt"
@@ -186,28 +202,44 @@ def _drop_stale_subbuild(build: Path, name: str, source: Path) -> None:
     if match and Path(match.group("path").strip()) != source.resolve():
         print(f"web-port: {name}'s build tree was generated for {match.group('path').strip()}; discarding it")
         shutil.rmtree(sub)
+        sub.mkdir(parents=True)
 
 
-def refresh_stale_pins(build: Path, skip: set[str]) -> None:
-    """Make a bumped pin take effect, by dropping the stamps that say done.
+def refresh_stale_pins(build: Path, overrides: dict[str, Path]) -> None:
+    """Make a bumped pin -- or a source override -- take effect.
 
-    Only the stamps, which are the EXTENSIONLESS files: `<name>-download`,
-    `-update`, `-patch`, `-configure`, `-build`, `-install`, `-done`. The
-    `.txt` files beside them are generated at CONFIGURE time and are build
-    inputs, so removing the directory wholesale breaks the build outright --
-    `ninja: error: 'sdl/src/sdl-stamp/sdl-source_dirinfo.txt', needed by
+    Two different staleness problems, and they apply to different sets:
+
+    A stale SUB-BUILD TREE affects every dependency, overridden or not. It is
+    the one CMake refuses outright instead of reconfiguring, so it is checked
+    against whichever source is actually in force. Checking an overridden
+    dependency against its pinned checkout instead was a defect in its own
+    right: it kept the tree that could not build and discarded the one that
+    could, exactly backwards.
+
+    A stale STAMP only matters where a pin decides what gets built, so an
+    overridden dependency is left alone: the caller is building the tree it
+    handed us, and there is no revision to compare against.
+
+    Only the stamps are removed, and only the EXTENSIONLESS ones:
+    `<name>-download`, `-update`, `-patch`, `-configure`, `-build`,
+    `-install`, `-done`. The `.txt` files beside them are generated at
+    CONFIGURE time and are build inputs, so removing the directory wholesale
+    breaks the build outright -- `ninja: error:
+    'sdl/src/sdl-stamp/sdl-source_dirinfo.txt', needed by
     'sdl/src/sdl-stamp/sdl-download', missing and no known rule to make it`.
     Configure regenerates them, but this runs after configure, so by then
     nothing will.
     """
     for name, revision in sorted(pinned_revisions().items()):
-        if name in skip:
-            continue
-        source = _checkout(build, name)
+        source = overrides.get(name) or _checkout(build, name)
         stamps = build / name / "src" / f"{name}-stamp"
         if source is None or not stamps.is_dir():
             continue
-        _drop_stale_subbuild(build, name, source)
+        if name == OVERRIDABLE:
+            _drop_stale_subbuild(build, name, source)
+        if name in overrides:
+            continue
         head = _head(source)
         if head == revision:
             continue
@@ -267,16 +299,16 @@ def main() -> int:
     # handed us, which is the point of the override. It is named out loud,
     # because an override that decides what gets compiled while the pin says
     # otherwise is exactly what this check exists to make visible.
-    overridden = {"sdl"} if args.sdl_source else set()
+    overridden: dict[str, Path] = {"sdl": args.sdl_source.resolve()} if args.sdl_source else {}
     for name, path in source_overrides(build).items():
-        overridden.add(name)
+        overridden[name] = path
         print(f"web-port: {name} is NOT built from its pin -- the build tree is configured "
               f"with a local source at {path}")
     refresh_stale_pins(build, overridden)
     subprocess.run(["cmake", "--build", str(build), "-j", str(args.jobs)],
                    cwd=ROOT, env=environment, check=True)
     validate_prefix(prefix)
-    validate_sources(build, overridden)
+    validate_sources(build, set(overridden))
     manifest = {
         "schema": 1, "emscripten": EMSCRIPTEN_VERSION, "pthread": True,
         "contract": dependency_contract(),
