@@ -94,6 +94,28 @@ def pinned_revisions() -> dict[str, str]:
     return pins
 
 
+_CACHED_OVERRIDE = re.compile(r"^WEB_PORT_SDL_SOURCE:[^=]*=(?P<path>.+)$", re.MULTILINE)
+
+
+def source_overrides(build: Path) -> dict[str, Path]:
+    """Dependencies being built from a local tree instead of their pin.
+
+    `-DWEB_PORT_SDL_SOURCE` PERSISTS IN THE CMAKE CACHE, so a build tree
+    configured with it once keeps using that tree on every later build, from
+    any caller, with nothing said. Measured: a vendored prefix had been built
+    from a developer's own SDL checkout for long enough that a pin bump landed,
+    built, installed and verified green while the pinned revision was never
+    compiled at all -- and the reason was one line in a cache file nobody
+    reads. An override is legitimate; an invisible one is not, so it is
+    announced wherever it applies.
+    """
+    cache = build / "CMakeCache.txt"
+    if not cache.is_file():
+        return {}
+    match = _CACHED_OVERRIDE.search(cache.read_text())
+    return {"sdl": Path(match.group("path").strip())} if match else {}
+
+
 def _checkout(build: Path, name: str) -> Path | None:
     """Where ExternalProject put `name`'s working tree, or None if it has not
     been fetched yet. The two layouts are an explicit SOURCE_DIR under
@@ -207,12 +229,25 @@ def main() -> int:
     ]
     if args.sdl_source:
         command.append(f"-DWEB_PORT_SDL_SOURCE={args.sdl_source.resolve()}")
+    else:
+        # An override must be ASKED FOR EVERY TIME. Left in the cache it
+        # silently outranks the pin on every later build by any caller, which
+        # is how a vendored prefix came to be compiled from a developer's own
+        # SDL checkout while a pin bump reported success without ever building
+        # the pinned revision.
+        command.append("-UWEB_PORT_SDL_SOURCE")
     subprocess.run(command, cwd=ROOT, env=environment, check=True)
     if args.configure_only:
         return 0
-    # A local SDL source has no pin to honour: the caller is building the tree
-    # it handed us, which is the point of the override.
+    # A local source has no pin to honour: the caller is building the tree it
+    # handed us, which is the point of the override. It is named out loud,
+    # because an override that decides what gets compiled while the pin says
+    # otherwise is exactly what this check exists to make visible.
     overridden = {"sdl"} if args.sdl_source else set()
+    for name, path in source_overrides(build).items():
+        overridden.add(name)
+        print(f"web-port: {name} is NOT built from its pin -- the build tree is configured "
+              f"with a local source at {path}")
     refresh_stale_pins(build, overridden)
     subprocess.run(["cmake", "--build", str(build), "-j", str(args.jobs)],
                    cwd=ROOT, env=environment, check=True)
