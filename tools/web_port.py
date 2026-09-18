@@ -165,6 +165,29 @@ def validate_sources(build: Path, skip: set[str]) -> None:
                          + ", ".join(unfetched))
 
 
+_CACHE_HOME = re.compile(r"^CMAKE_HOME_DIRECTORY:[^=]*=(?P<path>.+)$", re.MULTILINE)
+
+
+def _drop_stale_subbuild(build: Path, name: str, source: Path) -> None:
+    """Discard a dependency's build tree when it was generated for a different
+    source directory.
+
+    CMake refuses outright rather than reconfiguring -- `The source
+    ".../sources/sdl/CMakeLists.txt" does not match the source
+    ".../scratch/sdl-fork/CMakeLists.txt" used to generate cache` -- so
+    removing a source override or moving a pin leaves a tree that cannot
+    build at all until this is cleared.
+    """
+    sub = build / name / "src" / f"{name}-build"
+    cache = sub / "CMakeCache.txt"
+    if not cache.is_file():
+        return
+    match = _CACHE_HOME.search(cache.read_text())
+    if match and Path(match.group("path").strip()) != source.resolve():
+        print(f"web-port: {name}'s build tree was generated for {match.group('path').strip()}; discarding it")
+        shutil.rmtree(sub)
+
+
 def refresh_stale_pins(build: Path, skip: set[str]) -> None:
     """Make a bumped pin take effect, by dropping the stamps that say done.
 
@@ -184,6 +207,7 @@ def refresh_stale_pins(build: Path, skip: set[str]) -> None:
         stamps = build / name / "src" / f"{name}-stamp"
         if source is None or not stamps.is_dir():
             continue
+        _drop_stale_subbuild(build, name, source)
         head = _head(source)
         if head == revision:
             continue
