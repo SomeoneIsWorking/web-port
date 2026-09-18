@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -44,6 +45,117 @@ def dependency_contract() -> str:
     for path in (ROOT / "cmake/Dependencies.cmake", ROOT / "cmake/bzip2/CMakeLists.txt"):
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+# EVERY GIT PIN IN THE DECLARATIONS MUST BE ACCOUNTED FOR.
+#
+# Two shapes carry a revision. `web_library(name repo rev)` passes it as the
+# third argument -- the helper's own `GIT_TAG "${revision}"` is a variable, not
+# a pin -- and the other projects write a literal `GIT_TAG <40 hex>` inside
+# their declaration, where the name is either on the ExternalProject_Add or on
+# a `set(_sdl_source SOURCE_DIR ".../sources/sdl" ...)` that exists because SDL
+# also accepts a local source override.
+#
+# Both are read, and then the count is CHECKED: a parser that quietly skipped a
+# declaration it did not recognise would report "all pins verified" while never
+# looking at that dependency, which is the exact failure this check exists to
+# catch. That already happened twice while writing it -- one version dropped
+# bzip2 because its declaration does not end on its own line, and the next
+# dropped all five web_library dependencies because they carry no literal tag.
+#
+# ffmpeg is deliberately absent: it is a tarball pinned by SHA256, which
+# ExternalProject re-fetches itself when the hash changes, so it has no
+# checkout that can go stale.
+_HELPER = re.compile(r"web_library\(\s*(?P<name>\w+)\s+\S+\s+(?P<rev>[0-9a-f]{40})")
+_LITERAL_TAG = re.compile(r"GIT_TAG\s+(?P<rev>[0-9a-f]{40})")
+_NAMES = re.compile(
+    r'ExternalProject_Add\(\s*(?P<add>\w+)'
+    r'|SOURCE_DIR\s+"\$\{CMAKE_BINARY_DIR\}/sources/(?P<explicit>\w+)"')
+
+
+def pinned_revisions() -> dict[str, str]:
+    """Every git-pinned dependency and the revision it must be at.
+
+    Read from the file that DECLARES them, so this cannot drift from the build
+    the way a second hand-maintained list would.
+    """
+    text = (ROOT / "cmake/Dependencies.cmake").read_text()
+    pins = {m.group("name"): m.group("rev") for m in _HELPER.finditer(text)}
+    names = [(m.start(), m.group("add") or m.group("explicit")) for m in _NAMES.finditer(text)]
+    for tag in _LITERAL_TAG.finditer(text):
+        owner = [name for position, name in names if position < tag.start()]
+        if not owner:
+            raise ValueError(f"a literal GIT_TAG at offset {tag.start()} belongs to no named project")
+        pins[owner[-1]] = tag.group("rev")
+    declared = len(_HELPER.findall(text)) + len(_LITERAL_TAG.findall(text))
+    if len(pins) != declared:
+        raise ValueError(f"{declared} git pin(s) declared but {len(pins)} attributed to a project; "
+                         "cmake/Dependencies.cmake grew a shape this parser does not read")
+    return pins
+
+
+def _checkout(build: Path, name: str) -> Path | None:
+    """Where ExternalProject put `name`'s working tree, or None if it has not
+    been fetched yet. The two layouts are an explicit SOURCE_DIR under
+    `sources/` and ExternalProject's own default under the project prefix."""
+    for candidate in (build / "sources" / name, build / name / "src" / name):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _head(source: Path) -> str:
+    return subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
+def validate_sources(build: Path, skip: set[str]) -> None:
+    """Every checked-out dependency is at its pinned revision.
+
+    ExternalProject writes a `-done` stamp and never looks at GIT_TAG again, so
+    BUMPING A PIN DOES NOT MOVE THE SOURCE -- measured: an SDL pin bump
+    configured, built, installed and wrote a fresh dependency contract over a
+    prefix still compiled from the previous revision, reporting success at
+    every step. That contract then certifies the wrong bytes to every consumer,
+    which is worse than not checking at all.
+
+    A dependency that has never been fetched is reported, not skipped: "no
+    checkout" and "checkout at the right revision" must not print the same.
+    """
+    wrong, unfetched = [], []
+    for name, revision in sorted(pinned_revisions().items()):
+        if name in skip:
+            continue
+        source = _checkout(build, name)
+        if source is None:
+            unfetched.append(name)
+            continue
+        head = _head(source)
+        if head != revision:
+            wrong.append(f"{name}: checked out {head[:12]}, pinned {revision[:12]} ({source})")
+    if wrong:
+        raise ValueError(
+            "dependency source(s) are not at their pinned revision:\n  " + "\n  ".join(wrong)
+            + "\nExternalProject will not move them on its own; delete the matching "
+              "stamp directory under build/dependencies and build again.")
+    if unfetched:
+        raise ValueError("dependency source(s) were never fetched, so their pin is unverified: "
+                         + ", ".join(unfetched))
+
+
+def refresh_stale_pins(build: Path, skip: set[str]) -> None:
+    """Make a bumped pin take effect, by dropping the stamps that say done."""
+    for name, revision in sorted(pinned_revisions().items()):
+        if name in skip:
+            continue
+        source = _checkout(build, name)
+        stamps = build / name / "src" / f"{name}-stamp"
+        if source is None or not stamps.is_dir():
+            continue
+        head = _head(source)
+        if head != revision:
+            print(f"web-port: {name} is at {head[:12]} but is pinned to {revision[:12]}; re-running its steps")
+            shutil.rmtree(stamps)
 
 
 def validate_install(prefix: Path) -> None:
@@ -85,9 +197,14 @@ def main() -> int:
     subprocess.run(command, cwd=ROOT, env=environment, check=True)
     if args.configure_only:
         return 0
+    # A local SDL source has no pin to honour: the caller is building the tree
+    # it handed us, which is the point of the override.
+    overridden = {"sdl"} if args.sdl_source else set()
+    refresh_stale_pins(build, overridden)
     subprocess.run(["cmake", "--build", str(build), "-j", str(args.jobs)],
                    cwd=ROOT, env=environment, check=True)
     validate_prefix(prefix)
+    validate_sources(build, overridden)
     manifest = {
         "schema": 1, "emscripten": EMSCRIPTEN_VERSION, "pthread": True,
         "contract": dependency_contract(),
