@@ -146,11 +146,14 @@ def validate_sources(build: Path, skip: set[str]) -> None:
 def refresh_stale_pins(build: Path, skip: set[str]) -> None:
     """Make a bumped pin take effect, by dropping the stamps that say done.
 
-    Only the stamps. The `*-info.txt` files beside them are generated at
-    CONFIGURE time and are build inputs, not records of completed work, so
-    removing the whole directory breaks the build outright:
-    `ninja: error: 'sdl/src/sdl-stamp/sdl-patch-info.txt', needed by
-    'sdl/src/sdl-stamp/sdl-patch', missing and no known rule to make it`.
+    Only the stamps, which are the EXTENSIONLESS files: `<name>-download`,
+    `-update`, `-patch`, `-configure`, `-build`, `-install`, `-done`. The
+    `.txt` files beside them are generated at CONFIGURE time and are build
+    inputs, so removing the directory wholesale breaks the build outright --
+    `ninja: error: 'sdl/src/sdl-stamp/sdl-source_dirinfo.txt', needed by
+    'sdl/src/sdl-stamp/sdl-download', missing and no known rule to make it`.
+    Configure regenerates them, but this runs after configure, so by then
+    nothing will.
     """
     for name, revision in sorted(pinned_revisions().items()):
         if name in skip:
@@ -164,7 +167,7 @@ def refresh_stale_pins(build: Path, skip: set[str]) -> None:
             continue
         print(f"web-port: {name} is at {head[:12]} but is pinned to {revision[:12]}; re-running its steps")
         for stamp in stamps.iterdir():
-            if stamp.is_file() and not stamp.name.endswith("-info.txt"):
+            if stamp.is_file() and not stamp.suffix:
                 stamp.unlink()
 
 
