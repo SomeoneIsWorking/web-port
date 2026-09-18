@@ -144,7 +144,14 @@ def validate_sources(build: Path, skip: set[str]) -> None:
 
 
 def refresh_stale_pins(build: Path, skip: set[str]) -> None:
-    """Make a bumped pin take effect, by dropping the stamps that say done."""
+    """Make a bumped pin take effect, by dropping the stamps that say done.
+
+    Only the stamps. The `*-info.txt` files beside them are generated at
+    CONFIGURE time and are build inputs, not records of completed work, so
+    removing the whole directory breaks the build outright:
+    `ninja: error: 'sdl/src/sdl-stamp/sdl-patch-info.txt', needed by
+    'sdl/src/sdl-stamp/sdl-patch', missing and no known rule to make it`.
+    """
     for name, revision in sorted(pinned_revisions().items()):
         if name in skip:
             continue
@@ -153,9 +160,12 @@ def refresh_stale_pins(build: Path, skip: set[str]) -> None:
         if source is None or not stamps.is_dir():
             continue
         head = _head(source)
-        if head != revision:
-            print(f"web-port: {name} is at {head[:12]} but is pinned to {revision[:12]}; re-running its steps")
-            shutil.rmtree(stamps)
+        if head == revision:
+            continue
+        print(f"web-port: {name} is at {head[:12]} but is pinned to {revision[:12]}; re-running its steps")
+        for stamp in stamps.iterdir():
+            if stamp.is_file() and not stamp.name.endswith("-info.txt"):
+                stamp.unlink()
 
 
 def validate_install(prefix: Path) -> None:
