@@ -11,7 +11,7 @@ Previously each title would cross-build browser dependencies independently.
 | S003 | Windows and macOS maintainer builds | missing | Hosted build jobs and matching host execution evidence required. |
 | S004 | Browser runtime qualification | missing | Consuming title must execute actual SDL WebGPU and media paths. |
 | S005 | Explicit offline release packaging | partial | Exact input map, content version and unowned-output refusals pass two tests. The framework worker reached isolated reload on a host without isolation headers and after the server stopped. Real consumer offline gameplay remains. |
-| S006 | Browser applications stage and access files through private origin storage | partial | Worker mount/write/unmount/remount/read/remove passed in isolated Chromium, including six invalid mounts; bounded Blob staging and persistence-grant reporting passed. SDK OPFS worker shutdown on the browser main thread and complete consumer offline relaunch remain unqualified. |
+| S006 | Browser applications stage and access files through private origin storage | partial | Worker mount/write/unmount/remount/read/remove passed in isolated Chromium, including six invalid mounts; bounded Blob staging and persistence-grant reporting passed; the packaged module answers against a Storage Manager that never settles its permission prompt, measured in Node and refused for the superseded awaiting implementation (Firefox 156 leaves persist() pending and used to hang a consumer's whole setup page). SDK OPFS worker shutdown on the browser main thread and complete consumer offline relaunch remain unqualified. |
 
 Current focus: complete and verify the shared prefix for X-Men 2 and LF2.
 
