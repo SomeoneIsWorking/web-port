@@ -32,19 +32,36 @@ web_library(freetype https://github.com/freetype/freetype.git
     -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_HARFBUZZ=ON
     -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON)
 
+# WebGPU comes from Dawn's Emdawnwebgpu package, which SDL links through
+# emcc --use-port. The copy Emscripten vendors hands the whole wasm heap to
+# setBindGroup, and Firefox refuses an ArrayBufferView larger than 2GB there,
+# so with memory grown past 2GB every draw with dynamic offsets kills the
+# thread recording the frame. This is the same Dawn release with that one
+# call bound to a view of just the offsets. Nothing is built from it: emcc
+# reads the port file at compile and link time.
+ExternalProject_Add(emdawnwebgpu
+    PREFIX "${CMAKE_BINARY_DIR}/emdawnwebgpu"
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/sources/emdawnwebgpu"
+    GIT_REPOSITORY https://github.com/SomeoneIsWorking/emdawnwebgpu.git
+    GIT_TAG 500f12c83f4ec7047a31c37c72a4fe23c359a08c GIT_SUBMODULES ""
+    CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
+set(_emdawnwebgpu_port "${CMAKE_BINARY_DIR}/sources/emdawnwebgpu/emdawnwebgpu.port.py")
+
 if(WEB_PORT_SDL_SOURCE)
     set(_sdl_source SOURCE_DIR "${WEB_PORT_SDL_SOURCE}" DOWNLOAD_COMMAND "" UPDATE_COMMAND "")
 else()
     set(_sdl_source SOURCE_DIR "${CMAKE_BINARY_DIR}/sources/sdl"
         GIT_REPOSITORY https://github.com/SomeoneIsWorking/SDL.git
-        GIT_TAG 78419c3f07317511d2cf2f7d2a5ff54dcb6e06fc GIT_SUBMODULES "")
+        GIT_TAG d4b323257ab62c19742ff88b6017af28b1ca483b GIT_SUBMODULES "")
 endif()
 ExternalProject_Add(sdl
     PREFIX "${CMAKE_BINARY_DIR}/sdl" ${_sdl_source}
     BUILD_ALWAYS ON
     CMAKE_ARGS ${_common}
         -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_WEBGPU=ON -DSDL_PTHREADS=ON
+        -DSDL_EMDAWNWEBGPU_PORT=${_emdawnwebgpu_port}
         -DSDL_TESTS=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_INSTALL=ON -DSDL_INSTALL_TESTS=OFF)
+ExternalProject_Add_StepDependencies(sdl configure emdawnwebgpu)
 web_library(sdl_image https://github.com/libsdl-org/SDL_image.git
     bec9134a26c7d0f31b36d6083c25296e04cabff5
     -DSDLIMAGE_VENDORED=OFF -DSDLIMAGE_INSTALL=ON -DSDLIMAGE_AVIF=OFF
@@ -97,4 +114,4 @@ ExternalProject_Add(ffmpeg
     BUILD_COMMAND ${WEB_PORT_MAKE} -j2
     INSTALL_COMMAND ${WEB_PORT_MAKE} install)
 add_custom_target(web_port_dependencies ALL
-    DEPENDS sdl sdl_image sdl_ttf freetype zlib png bzip2 ffmpeg)
+    DEPENDS sdl sdl_image sdl_ttf freetype zlib png bzip2 ffmpeg emdawnwebgpu)
