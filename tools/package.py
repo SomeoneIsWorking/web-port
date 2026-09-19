@@ -14,7 +14,7 @@ def package_application(destination: Path, files: dict[str, Path]) -> None:
     """Package only the caller's exact asset map, never a build-tree glob."""
     inputs = dict(files)
     runtime = Path(__file__).resolve().parents[1] / "platforms/web"
-    for name in ("storage.mjs", "isolation.mjs"):
+    for name in ("storage.mjs", "isolation.mjs", "canvas.mjs"):
         if name in inputs:
             raise ValueError(f"Reserved shared runtime resource: {name}")
         inputs[name] = runtime / name

@@ -36,7 +36,7 @@ def test_explicit_inputs_and_content_version(tmp_path):
     (tmp_path / "XMen2.exe").write_text("restricted fixture must never be discovered")
     package_application(destination, files)
     first = manifest(destination)
-    assert first["files"] == ["index.html", "isolation.mjs", "storage.mjs"]
+    assert first["files"] == ["canvas.mjs", "index.html", "isolation.mjs", "storage.mjs"]
     assert not (destination / "XMen2.exe").exists()
     files["index.html"].write_text("changed release")
     package_application(destination, files)
