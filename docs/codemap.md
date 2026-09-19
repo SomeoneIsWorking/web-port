@@ -5,6 +5,7 @@
 | Native dependency prefix | Pinned browser-library sources, Emscripten CMake composition and installation | `CMakeLists.txt`, `cmake/Dependencies.cmake` | `web_port_dependencies` |
 | Shader conversion | Pinned Naga provisioning, SDL sampler slots, depth-image declarations and atomic WGSL publication | `tools/shaders.py`, `tools/shader_depth.py`, `tools/shader_arrays.py` | `convert` |
 | Browser private storage | OPFS mount/unmount on the application worker and bounded browser-file staging | `include/web_port/storage.h`, `src/web_storage.cpp`, `platforms/web/storage.mjs` | `web_port_mount_storage`, `FileStager` |
+| Browser canvas gestures | Take the browser's own scroll, pinch, callout, selection and overscroll gestures away from the game canvas, and publish its size and platform safe-area insets | `platforms/web/canvas.mjs` | `claimCanvasGestures`, `safeAreaInsets` |
 | Browser isolation | Service-worker registration, first-navigation reload and offline release cache | `platforms/web/isolation.mjs`, `platforms/web/service-worker.js` | `prepareApplication` |
 | Release packaging | Exact redistributable resource map, content version and offline-worker rendering | `tools/package.py` | `package_application` |
 | Build contract | Toolchain validation, locked build invocation and required prefix manifest | `tools/web_port.py` | `main` |
