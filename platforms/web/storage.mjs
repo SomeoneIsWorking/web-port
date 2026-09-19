@@ -4,8 +4,25 @@ export async function persistentStorage() {
   if (!globalThis.isSecureContext || !navigator.storage?.getDirectory) {
     throw new Error("This browser cannot provide private persistent storage.");
   }
-  const persistent = await navigator.storage.persist();
-  return {root: await navigator.storage.getDirectory(), persistent};
+  // navigator.storage.persist() asks a permission question, and a browser is
+  // entitled to leave it unanswered: measured in Firefox 156, it never settles,
+  // so awaiting it here held the whole application at its first status line
+  // behind a prompt the player was never shown. Ask, report what is true now,
+  // and hand the caller the answer to fold in if and when it arrives.
+  const root = await navigator.storage.getDirectory();
+  const granted = requestPersistence();
+  const persistent = await navigator.storage.persisted();
+  return {root, persistent, granted};
+}
+
+/* Never rejects and never blocks: a refused or unanswered request is simply
+ * storage that the browser may reclaim, which the caller reports as such. */
+function requestPersistence() {
+  try {
+    return Promise.resolve(navigator.storage.persist()).then(Boolean, () => false);
+  } catch (error) {
+    return Promise.resolve(false);
+  }
 }
 
 function leaf(name) {
