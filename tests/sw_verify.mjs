@@ -111,5 +111,31 @@ const check = (label, ok, detail) => {
   }
 }
 
+// 4. A navigation carrying page arguments is still answered from the release
+// cache, with the isolation headers on it. Answering it from the network looks
+// like a working page right up to the point where nothing can start a thread.
+{
+  const { listeners, stored } = context((name) => released(name));
+  await install(listeners);
+  const answered = [];
+  const respond = (href) =>
+    listeners.fetch({
+      request: { method: "GET", url: href },
+      respondWith: (promise) => answered.push(promise),
+    });
+  respond(`${scope}?arg=--set&arg=jit.blocks=262144`);
+  respond(`${scope}index.html?arg=--test`);
+  respond(`${scope}not-in-this-release.js`);
+  check("an argument-carrying navigation is answered", answered.length === 2,
+    `${answered.length} of 3 request(s) answered`);
+  const headers = (await Promise.all(answered)).map((response) =>
+    response.headers.get("Cross-Origin-Embedder-Policy"));
+  check("and carries the isolation headers",
+    headers.length > 0 && headers.every((value) => value === "require-corp"),
+    headers.join(", ") || "nothing was answered");
+  check("the release cache is what answered it", stored.size === release.files.length,
+    `${stored.size}/${release.files.length}`);
+}
+
 console.log(failures === 0 ? "sw-verify: OK" : `sw-verify: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
