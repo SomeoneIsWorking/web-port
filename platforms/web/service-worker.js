@@ -64,12 +64,18 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.href === self.registration.scope) url.pathname += "index.html";
-  if (!assets.has(url.href)) return;
+  /* A query string names arguments for the page, not a different file. Keeping
+   * it in the lookup made "index.html?arg=..." miss the release cache, so that
+   * navigation was answered by the network WITHOUT the isolation headers below
+   * and the page loaded without cross-origin isolation -- which reads as the
+   * browser refusing service workers rather than as this line. */
+  const resource = new URL(url.pathname, url.origin);
+  if (resource.href === self.registration.scope) resource.pathname += "index.html";
+  if (!assets.has(resource.href)) return;
   event.respondWith((async () => {
     const cache = await caches.open(cacheName);
-    const response = await cache.match(url.href);
-    if (!response) throw new Error(`Application resource absent from release cache: ${url.pathname}`);
+    const response = await cache.match(resource.href);
+    if (!response) throw new Error(`Application resource absent from release cache: ${resource.pathname}`);
     const headers = new Headers(response.headers);
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
     headers.set("Cross-Origin-Embedder-Policy", "require-corp");
