@@ -43,7 +43,7 @@ ExternalProject_Add(emdawnwebgpu
     PREFIX "${CMAKE_BINARY_DIR}/emdawnwebgpu"
     SOURCE_DIR "${CMAKE_BINARY_DIR}/sources/emdawnwebgpu"
     GIT_REPOSITORY https://github.com/SomeoneIsWorking/emdawnwebgpu.git
-    GIT_TAG 500f12c83f4ec7047a31c37c72a4fe23c359a08c GIT_SUBMODULES ""
+    GIT_TAG 21f4e0b9cbcabbeee73034ba5442d809c03fcefd GIT_SUBMODULES ""
     CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
 set(_emdawnwebgpu_port "${CMAKE_BINARY_DIR}/sources/emdawnwebgpu/emdawnwebgpu.port.py")
 
@@ -52,7 +52,7 @@ if(WEB_PORT_SDL_SOURCE)
 else()
     set(_sdl_source SOURCE_DIR "${CMAKE_BINARY_DIR}/sources/sdl"
         GIT_REPOSITORY https://github.com/SomeoneIsWorking/SDL.git
-        GIT_TAG eaab1e22008db1ac2679134ada1019396e1bab06 GIT_SUBMODULES "")
+        GIT_TAG 6807efdb8fdc2118e1b97a87b366bb9f3440dcdf GIT_SUBMODULES "")
 endif()
 ExternalProject_Add(sdl
     PREFIX "${CMAKE_BINARY_DIR}/sdl" ${_sdl_source}
