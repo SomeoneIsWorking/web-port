@@ -55,3 +55,5 @@ Run shader verification separately from provisioning:
 ```
 uv run --frozen pytest -q tests/test_shaders.py
 ```
+
+Built with AI assistance (Claude and other LLMs).
